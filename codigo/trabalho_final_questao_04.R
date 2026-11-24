@@ -119,162 +119,217 @@ ler_melhorias_processo <- function(caminho_arquivo, nome_instancia, num_rodada) 
   # do arquivo de processo ("Event Name" e "Operator Name"), passado ao parâmetro 
   # col_select para ignorar as demais colunas durante a importação.
   # ==============================================================================
-  df <- read_csv2(caminho_arquivo, col_select = c("Event Name", "Operator Name"))
+  read_csv2(caminho_arquivo, col_select = c("Event Name", "Operator Name")) %>%
 
-    # ==============================================================================
-    # Filtra as linhas de melhoria e anexa os identificadores da instância e rodada.
-    # 
-    # O primeiro operador pipe %>% encaminha o tibble df como o primeiro argumento 
-    # implícito para a função filter(), dispensando a repetição do nome da tabela 
-    # ou do operador $.
-    # 
-    # A função "filter(...)" está selecionando apenas as linhas em que a coluna 
-    # "Event Name" seja "Found better in current neighborhood".
-    # 
-    # O segundo pipe %>% pega o subconjunto reduzido de linhas devolvido pelo filter() 
-    # e o encaminha diretamente como entrada para a função mutate().
-    # 
-    # A função mutate(...) cria novas colunas ao final do tibble. O parâmetro 
-    # instance = nome_instancia cria uma nova coluna chamada instance e a preenche 
-    # com o valor recebido no parâmetro nome_instancia. O parâmetro rodada = num_rodada
-    # cria uma nova coluna chamada rodada e replica o número inteiro recebido em num_rodada.
-    # ==============================================================================
-    df %>%
-      filter(`Event Name` == "Found better in current neighborhood") %>%
-      mutate( instance = nome_instancia, rodada = num_rodada )
-  }
-  
-
-
-
-
-
-  cat("Lendo e filtrando os 750 arquivos de processo...\n")
-  
   # ==============================================================================
-  # Leitura em lote dos 750 arquivos e empilhamento em um único tibble
+  # Filtra as linhas de melhoria.
+  # 
+  # O primeiro operador pipe %>% encaminha o tibble resultante da função read_csv2()  
+  # como o primeiro argumento implícito para a função filter(), dispensando a repetição 
+  # do nome da tabela ou do operador $.
+  # 
+  # A função "filter(...)" está selecionando apenas as linhas em que a coluna 
+  # "Event Name" seja "Found better in current neighborhood".
   # ==============================================================================
-  eventos_melhoria <- pmap_dfr(
-    list(
-      caminho_arquivo = grade_arquivos$caminho,
-      nome_instancia  = grade_arquivos$instance,
-      num_rodada      = grade_arquivos$rodada
-    ),
-    ler_melhorias_processo
+  filter(`Event Name` == "Found better in current neighborhood") %>%
+  
+  # ==============================================================================   
+  # Anexa os identificadores da instância e rodada.
+  # 
+  # O segundo pipe %>% pega o subconjunto reduzido de linhas devolvido pelo filter() 
+  # e o encaminha diretamente como entrada para a função mutate().
+  # 
+  # A função mutate(...) cria novas colunas ao final do tibble. O parâmetro 
+  # instance = nome_instancia cria uma nova coluna chamada instance e a preenche 
+  # com o valor recebido no parâmetro nome_instancia. O parâmetro rodada = num_rodada
+  # cria uma nova coluna chamada rodada e replica o número inteiro recebido em num_rodada.
+  # 
+  # O resultado de todo o encadeamento (read_csv2() -> filter() -> mutate()) é entregue  
+  # diretamente como o retorno da função ler_melhorias_processo().
+  # ==============================================================================
+  mutate(instance = nome_instancia, rodada = num_rodada)
+}
+
+# ==============================================================================
+# Leitura em lote dos 750 arquivos e empilhamento em um único tibble, substituindo 
+# loop tradicional de "for" aninhados.
+# 
+# A função pmap_dfr(.l, .f) resume 3 ações realizadas de uma única vez:
+#  - p (parallel): Percorre múltiplos vetores de entrada em paralelo, linha por 
+#    linha (índice 1 com índice 1, índice 2 com índice 2, até o índice 750).
+#  - map: Aplica repetidamente uma mesma função (.f) sobre cada conjunto de elementos 
+#    extraídos de cada posição.
+#  - _dfr (data frame row-binding): Empilha automaticamente pelas linhas (row-bind) 
+#    os 750 pequenos tibbles devolvidos por cada chamada da função em um único tibble.
+# 
+# A função list() agrupa vetores sob uma única estrutura, e aqui está sendo reunido
+# 3 vetores de 750 posições extraídos de grade_arquivos pelo operador $. Os nomes 
+# definidos à esquerda do sinal = (caminho_arquivo, nome_instancia e num_rodada) 
+# correspondem aos nomes dos três parâmetros declarados na assinatura de ler_melhorias_processo(), 
+# garantindo o casamento dos argumentos a cada iteração.
+# 
+# A função ler_melhorias_processo é passada como objeto (sem parênteses no final, 
+# pois ela não está sendo executada ali, mas sim entregue ao pmap_dfr() para que 
+# ele a invoque 750 vezes internamente).
+# ==============================================================================
+eventos_melhoria <- pmap_dfr(
+ list(
+  caminho_arquivo = grade_arquivos$caminho,
+  nome_instancia  = grade_arquivos$instance,
+  num_rodada      = grade_arquivos$rodada
+ ),
+ ler_melhorias_processo
+)
+
+# ==============================================================================
+# Padronização das siglas dos operadores. É criado um tibble a partir de eventos_melhoria, 
+# normalizando os nomes textuais registrados na coluna `Operator Name` e convertendo-os 
+# nas siglas dos 12 operadores de vizinhança adotadas na Tabela 12.
+# 
+# A variável eventos_padronizados recebe o tibble final devolvido pela função mutate().
+#
+# A função mutate() adiciona a nova coluna 'Operador' ao final do tibble de 
+# forma vetorizada. A criação da coluna Operador é necessária para converter os 
+# nomes completos registrados nos arquivos CSV brutos nas siglas padronizadas 
+# que formam as colunas da Tabela 12.
+# 
+# O primeiro parâmetro declarado na função mutate() é o tibble eventos_melhroria
+# que será transformado.
+# 
+# A função case_when() é uma estrutura condicional vetorizada equivalente a uma 
+# cadeia de if / else if / else que avalia múltiplas condições lógicas linha por 
+# linha e atribui um valor correspondente para formar a nova coluna Operador.
+# A sintaxe é baseada no operador fórmula ~ , onde cada linha interna do case_when() 
+# é dividida pelo til ~ em duas partes:
+#  - À esquerda do ~ (condição lógica): Um teste vetorial que retorna TRUE ou FALSE 
+#    para cada linha da tabela que verifica se o texto da coluna Operation Name é igual.
+#  - À direita do ~ (valor de saída): O resultado gravado na coluna Operador para 
+#    todas as linhas em que o teste da esquerda foi verdadeiro.
+# O case_when() testa as regras na ordem em que foram escritas, de cima para baixo, 
+# e assim que uma linha satisfaz uma condição, ela recebe a sigla definida e não 
+# é mais testada nas regras seguintes.
+# ==============================================================================
+eventos_padronizados <- mutate(eventos_melhoria,
+                               Operador = case_when(
+                                `Operator Name` == "Extraction"      ~ "EXT",
+                                `Operator Name` == "Swap"            ~ "SW",
+                                `Operator Name` == "Range"           ~ "RNG",
+                                `Operator Name` == "Dot"             ~ "DOT",
+                                `Operator Name` == "Star quantifier" ~ "STAR",
+                                `Operator Name` == "Concatenation"   ~ "CC",
+                                `Operator Name` == "Negation"        ~ "NEG",
+                                `Operator Name` == "Back reference"  ~ "BR",
+                                `Operator Name` == "Plus quantifier" ~ "PLUS", 
+                                `Operator Name` == "Start anchor"    ~ "START",
+                                `Operator Name` == "Optional"        ~ "OPT",
+                                `Operator Name` == "End anchor"      ~ "END"
+                               )
+                              )
+
+# ==============================================================================
+# Agrupa-se os registros de melhoria por instância e por operador de vizinhança, 
+# contabilizando o total acumulado de aplicações bem-sucedidas ao longo das 50 rodadas 
+# para cada par.
+# 
+# Na variável contagem_por_instancia é armazenado o novo tibble resumido, preservando 
+# o tibble eventos_padronizados intacto na memória.
+# 
+# A função count() agrupa um tibble pelas variáveis informadas e conta quantas linhas 
+# existem em cada grupo.
+# O primeiro argumento explícito "eventos_padronizados" indica o tibble de entrada 
+# que contém os eventos de melhoria com as siglas padronizadas na coluna Operador.
+# Os argumentos "instance" e "Operador" são as colunas usadas como chave de agrupamento.
+# Como a coluna rodada é omitida, o count() soma automaticamente todas as ocorrências 
+# registradas nas 50 rodadas para cada par único de "instance" e "Operador".
+# O parâmetro "name = "qtd_aplicacoes" " define o nome da nova coluna onde serão 
+# gravadas as contagens.
+# ==============================================================================
+contagem_por_instancia <- count(eventos_padronizados, instance, Operador, name = "qtd_aplicacoes")
+
+
+ 
+
+
+
+
+
+
+
+
+
+
+
+
+
+total_geral_todos_operadores <- sum(contagem_por_instancia$qtd_aplicacoes)
+
+# ==============================================================================
+# Construção da Tabela 12 completa com todos os 12 operadores (formato largo,
+# ordenação por 'order', formatação dos nomes das instâncias e cálculo dos totais)
+# ==============================================================================
+todos_operadores <- c(
+  "EXT", "SW", "RNG", "DOT", "STAR", "CC",
+  "NEG", "BR", "PLUS", "START", "OPT", "END"
+)
+
+tabela_12_instancias <- contagem_por_instancia %>%
+  pivot_wider(
+    names_from  = Operador,
+    values_from = qtd_aplicacoes,
+    values_fill = 0
+  ) %>%
+  right_join(dados_instancias, by = "instance") %>%
+  arrange(order) %>%
+  # Converte os identificadores técnicos dos arquivos para os nomes formatados
+  # publicados na coluna 'Instance' da Tabela 12 do artigo
+  mutate(
+    Instance = case_when(
+      instance == "warmup"       ~ "Plain strings",
+      instance == "anchors"      ~ "Anchors",
+      instance == "ranges"       ~ "Ranges",
+      instance == "backrefs"     ~ "Backrefs",
+      instance == "abba"         ~ "Abba",
+      instance == "aman-aplan"   ~ "A man, a plan",
+      instance == "prime"        ~ "Prime",
+      instance == "four"         ~ "Four",
+      instance == "order"        ~ "Order",
+      instance == "triples"      ~ "Triples",
+      instance == "glob"         ~ "Glob",
+      instance == "balance"      ~ "Balance",
+      instance == "powers"       ~ "Powers",
+      instance == "long-count"   ~ "Long count",
+      instance == "alphabetical" ~ "Alphabetical",
+      TRUE                       ~ instance
+    )
+  ) %>%
+  select(Instance, all_of(todos_operadores))
+
+linha_total <- tabela_12_instancias %>%
+  summarise(
+    Instance = "Total",
+    across(all_of(todos_operadores), sum)
   )
-  
-  cat("Leitura concluída! Total de melhorias registradas:", nrow(eventos_melhoria), "\n\n")
-  
-  # ==============================================================================
-  # Padronização das siglas dos operadores e contagem acumulada nas 50 rodadas
-  # ==============================================================================
-  eventos_padronizados <- eventos_melhoria %>%
-    mutate(
-      op_limpo = str_remove_all(str_to_lower(`Operator Name`), "[- ]"),
-      Operador = case_when(
-        op_limpo == "extraction"     ~ "EXT",
-        op_limpo == "swap"           ~ "SW",
-        op_limpo == "range"          ~ "RNG",
-        op_limpo == "dot"            ~ "DOT",
-        op_limpo == "starquantifier" ~ "STAR",
-        op_limpo == "concatenation"  ~ "CC",
-        op_limpo == "negation"       ~ "NEG",
-        op_limpo == "backreference"  ~ "BR",
-        # Operadores menos frequentes omitidos das colunas da Tabela 12,
-        # mas contabilizados no denominador do "Total (%)"
-        op_limpo == "plusquantifier" ~ "PLUS",
-        op_limpo == "startanchor"    ~ "START",
-        op_limpo == "optional"       ~ "OPT",
-        op_limpo == "endanchor"      ~ "END",
-        TRUE                         ~ `Operator Name`
-      )
-    )
-  
-  contagem_por_instancia <- eventos_padronizados %>%
-    count(instance, Operador, name = "qtd_aplicacoes")
-  
-  total_geral_todos_operadores <- sum(contagem_por_instancia$qtd_aplicacoes)
 
-  # ==============================================================================
-  # Construção da Tabela 12 (formato largo, ordenação por 'order', formatação
-  # dos nomes das instâncias conforme o artigo e cálculo dos totais)
-  # ==============================================================================
-  top8_operadores <- c("EXT", "SW", "RNG", "DOT", "STAR", "CC", "NEG", "BR")
-  
-  tabela_12_instancias <- contagem_por_instancia %>%
-    filter(Operador %in% top8_operadores) %>%
-    pivot_wider(
-      names_from  = Operador,
-      values_from = qtd_aplicacoes,
-      values_fill = 0
-    ) %>%
-    right_join(dados_instancias, by = "instance") %>%
-    arrange(order) %>%
-    # Converte os identificadores técnicos dos arquivos para os nomes formatados
-    # publicados na coluna 'Instance' da Tabela 12 do artigo
-    mutate(
-      Instance = case_when(
-        instance == "warmup"       ~ "Plain strings",
-        instance == "anchors"      ~ "Anchors",
-        instance == "ranges"       ~ "Ranges",
-        instance == "backrefs"     ~ "Backrefs",
-        instance == "abba"         ~ "Abba",
-        instance == "aman-aplan"   ~ "A man, a plan",
-        instance == "prime"        ~ "Prime",
-        instance == "four"         ~ "Four",
-        instance == "order"        ~ "Order",
-        instance == "triples"      ~ "Triples",
-        instance == "glob"         ~ "Glob",
-        instance == "balance"      ~ "Balance",
-        instance == "powers"       ~ "Powers",
-        instance == "long-count"   ~ "Long count",
-        instance == "alphabetical" ~ "Alphabetical",
-        TRUE                       ~ instance
-      )
-    ) %>%
-    select(Instance, all_of(top8_operadores))
-  
-  linha_total <- tabela_12_instancias %>%
-    summarise(
-      Instance = "Total",
-      across(all_of(top8_operadores), sum)
-    )
-  
-  linha_percentual <- linha_total %>%
-    mutate(
-      Instance = "Total (%)",
-      across(all_of(top8_operadores), ~ round((.x / total_geral_todos_operadores) * 100, 2))
-    )
-  
-  tabela_12_final <- bind_rows(
-    tabela_12_instancias,
-    linha_total,
-    linha_percentual
+linha_percentual <- linha_total %>%
+  mutate(
+    Instance = "Total (%)",
+    across(all_of(todos_operadores), ~ round((.x / total_geral_todos_operadores) * 100, 2))
   )
 
-  # ==============================================================================
-  # Exibição dos resultados no console e exportação para CSV
-  # ==============================================================================
-  cat("======================================================================\n")
-  cat("TABELA 12 - APLICAÇÕES EFETIVAS DOS OPERADORES DE VIZINHANÇA (50 RODADAS)\n")
-  cat("======================================================================\n")
-  print(as.data.frame(tabela_12_final), row.names = FALSE)
+tabela_12_final <- bind_rows(
+  tabela_12_instancias,
+  linha_total,
+  linha_percentual
+)
 
-  cat("\n----------------------------------------------------------------------\n")
-  cat("COMPLEMENTO: Os 4 operadores menos frequentes omitidos da Tabela 12:\n")
-  cat("----------------------------------------------------------------------\n")
-  complemento_operadores <- contagem_por_instancia %>%
-    filter(!Operador %in% top8_operadores) %>%
-    group_by(Operador) %>%
-    summarise(
-      Total = sum(qtd_aplicacoes),
-      `Total (%)` = round((Total / total_geral_todos_operadores) * 100, 2),
-      .groups = "drop"
-    ) %>%
-    arrange(desc(Total))
+# ==============================================================================
+# Exibição dos resultados no console e exportação para CSV
+# ==============================================================================
+cat("======================================================================\n")
+cat("TABELA 12 COMPLETA - TODOS OS 12 OPERADORES DE VIZINHANÇA (50 RODADAS)\n")
+cat("======================================================================\n")
+print(as.data.frame(tabela_12_final), row.names = FALSE)
 
-  print(as.data.frame(complemento_operadores), row.names = FALSE)
-  
-  arquivo_saida <- file.path(diretorio_base, "resultado_item4_tabela12.csv")
-  write_csv2(tabela_12_final, arquivo_saida)
-  cat("\nArquivo salvo em:", arquivo_saida, "\n")
+arquivo_saida <- file.path(diretorio_base, "resultado_item4_tabela12.csv")
+write_csv2(tabela_12_final, arquivo_saida)
+cat("\nArquivo salvo em:", arquivo_saida, "\n")
