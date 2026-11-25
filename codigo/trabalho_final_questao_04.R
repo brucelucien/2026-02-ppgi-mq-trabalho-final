@@ -246,76 +246,157 @@ eventos_padronizados <- mutate(eventos_melhoria,
 # ==============================================================================
 contagem_por_instancia <- count(eventos_padronizados, instance, Operador, name = "qtd_aplicacoes")
 
-
- 
-
-
-
-
-
-
-
-
-
-
-
-
-
+# ==============================================================================
+# É feita a soma de todas as aplicações bem-sucedidas dos 12 operadores de vizinhança
+# ao longo das 50 rodadas e das 15 instâncias, armazenando esse valor na variável 
+# total_geral_todos_operadores.
+# 
+# Essa variável funciona como o denominador na criação da linha_percentual por meio 
+# da fórmula round((.x / total_geral_todos_operadores) * 100, 2).
+# ==============================================================================
 total_geral_todos_operadores <- sum(contagem_por_instancia$qtd_aplicacoes)
 
 # ==============================================================================
-# Construção da Tabela 12 completa com todos os 12 operadores (formato largo,
-# ordenação por 'order', formatação dos nomes das instâncias e cálculo dos totais)
+# Construção da Tabela 12 completa com todos os 12 operadores.
+# A função c() cria um vetor de texto com as siglas dos operadores.
 # ==============================================================================
-todos_operadores <- c(
-  "EXT", "SW", "RNG", "DOT", "STAR", "CC",
-  "NEG", "BR", "PLUS", "START", "OPT", "END"
-)
+todos_operadores <- c("EXT","SW","RNG","DOT","STAR","CC","NEG","BR","PLUS","START","OPT","END")
 
-tabela_12_instancias <- contagem_por_instancia %>%
-  pivot_wider(
-    names_from  = Operador,
-    values_from = qtd_aplicacoes,
-    values_fill = 0
-  ) %>%
-  right_join(dados_instancias, by = "instance") %>%
-  arrange(order) %>%
-  # Converte os identificadores técnicos dos arquivos para os nomes formatados
-  # publicados na coluna 'Instance' da Tabela 12 do artigo
-  mutate(
-    Instance = case_when(
-      instance == "warmup"       ~ "Plain strings",
-      instance == "anchors"      ~ "Anchors",
-      instance == "ranges"       ~ "Ranges",
-      instance == "backrefs"     ~ "Backrefs",
-      instance == "abba"         ~ "Abba",
-      instance == "aman-aplan"   ~ "A man, a plan",
-      instance == "prime"        ~ "Prime",
-      instance == "four"         ~ "Four",
-      instance == "order"        ~ "Order",
-      instance == "triples"      ~ "Triples",
-      instance == "glob"         ~ "Glob",
-      instance == "balance"      ~ "Balance",
-      instance == "powers"       ~ "Powers",
-      instance == "long-count"   ~ "Long count",
-      instance == "alphabetical" ~ "Alphabetical",
-      TRUE                       ~ instance
-    )
-  ) %>%
+# ==============================================================================
+# Transformação do tibble "contagem_por_instancia" para a estrutura matricial da 
+# Tabela 12, organizando linhas e colunas como no artigo e armazenando o tibble 
+# resultante (15 linhas × 13 colunas) em tabela_12_instancias.
+# 
+# A função "pivot_wider()" recebe "contagem_por_instancia" como primeiro argumento 
+# explícito e reorganiza o tibble pelos critérios:
+# - names_from = Operador: Converte cada sigla distinta da coluna Operador em um 
+#   cabeçalho de coluna.
+# - values_from = qtd_aplicacoes: Preenche as células sob essas novas colunas com 
+#   as respectivas contagens acumuladas.
+# - values_fill = 0: Substitui por 0 qualquer célula vazia (NA) nos casos em que 
+#   um operador nunca produziu melhoria em determinada instância.
+# ==============================================================================
+tabela_12_instancias <-  pivot_wider(contagem_por_instancia,
+                                     names_from  = Operador,
+                                     values_from = qtd_aplicacoes,
+                                     values_fill = 0) %>%
+
+# ==============================================================================
+# O primeiro pipe %>% injeta o tibble pivoteado como argumento inicial implícito 
+# de right_join(), que a cruza com dados_instancias usando "instance" como "chave primária".
+# 
+# A função right_join() faz com que as 15 instâncias listadas à direita no tibble 
+# dados_instancias permaneçam no resultado e traz a coluna numérica "order" para 
+# a tabela (que será suprimida posteriormente pela função select() ).
+# ==============================================================================
+                         right_join(dados_instancias, by = "instance") %>%
+
+# ==============================================================================
+# O segundo pipe %>% injeta o tibble resultante do right_join() como argumento inicial 
+# implícito de arrange().
+# 
+# A função arrange() ordena as 15 linhas de forma crescente pela coluna order (de 
+# 1 a 15), reproduzindo a sequência exata de apresentação das instâncias na Tabela 
+# 12 do artigo.
+# ==============================================================================
+                         arrange(order) %>%
+
+# ==============================================================================
+# O terceiro pipe %>% injeta o tibble resultante do arrange() como argumento inicial 
+# implícito de mutate().
+# 
+# A função mutate() cria a coluna Instance, utilizando case_when() para traduzir 
+# os identificadores técnicos dos arquivos ("warmup", "aman-aplan" etc.) nos rótulos 
+# formatados publicados no estudo ("Plain strings", "A man, a plan", etc.).
+# ==============================================================================
+                         mutate(Instance = case_when(
+                                            instance == "warmup"       ~ "Plain strings",
+                                            instance == "anchors"      ~ "Anchors",
+                                            instance == "ranges"       ~ "Ranges",
+                                            instance == "backrefs"     ~ "Backrefs",
+                                            instance == "abba"         ~ "Abba",
+                                            instance == "aman-aplan"   ~ "A man, a plan",
+                                            instance == "prime"        ~ "Prime",
+                                            instance == "four"         ~ "Four",
+                                            instance == "order"        ~ "Order",
+                                            instance == "triples"      ~ "Triples",
+                                            instance == "glob"         ~ "Glob",
+                                            instance == "balance"      ~ "Balance",
+                                            instance == "powers"       ~ "Powers",
+                                            instance == "long-count"   ~ "Long count",
+                                            instance == "alphabetical" ~ "Alphabetical"
+                                           )
+                               ) %>%
+
+# ==============================================================================
+# O quarto pipe %>% injeta o tibble resultante do mutate() como argumento inicial 
+# implícito de select().
+# O pipe %>% envia o tibble intermediário, que nesse momento possui 15 colunas:
+# instance, as 12 siglas criadas pelo pivot_wider(), order trazida pelo right_join(), 
+# e Instance criada pelo mutate()).
+# 
+# A função select() mantém apenas as 13 colunas declaradas dentro dos parênteses, 
+# eliminando automaticamente "instance" e "order" que já cumpriram seus papéis nas
+# etapas anteriores.
+# O primeiro argumento Instance informa o nome literal da coluna que ficará como
+# primeira coluna à esquerda do tibble.
+# O segundo argumento all_of(todos_operadores) instrui a expandir o vetor todos_operadores
+# como uma lista de nomes de colunas.
+# ==============================================================================
   select(Instance, all_of(todos_operadores))
 
-linha_total <- tabela_12_instancias %>%
-  summarise(
-    Instance = "Total",
-    across(all_of(todos_operadores), sum)
-  )
+# ==============================================================================
+# Criação do tibble com 1 linha × 13 colunas contendo a soma vertical de cada um 
+# dos 12 operadores de vizinhança ao longo das 15 instâncias presentes em "tabela_12_instancias".
+# 
+# A função summarise() condensa as 15 linhas em uma linha consolidada.
+# O primeiro argumento "tabela_12_instancias" indica explicitamente o tibble de 
+# entrada que será sumarizado, contendo os valores das 15 instâncias distribuídos 
+# nas 12 colunas de operadores.
+# O segundo argumento "Instance = "Total" " define a primeira coluna do novo tibble 
+# com o nome Instance e o texto constante "Total".
+# O terceiro argumento "across()" aplica uma mesma função simultaneamente a um conjunto
+# de colunas, no caso a função "sum" soma verticalmente os 15 valores numéricos 
+# de todas as 12 colunas descritas no vetor "todos_operadores".
+# ==============================================================================
+linha_total <- summarise(tabela_12_instancias,
+                         Instance = "Total",
+                         across(all_of(todos_operadores), sum)
+                        )
 
-linha_percentual <- linha_total %>%
-  mutate(
-    Instance = "Total (%)",
-    across(all_of(todos_operadores), ~ round((.x / total_geral_todos_operadores) * 100, 2))
-  )
+# ==============================================================================
+# Conversão da soma de cada um dos 12 operadores para seu percentual de participação 
+# sobre o total geral de melhorias do experimento (total_geral_todos_operadores), 
+# com arredondamento de duas casas decimais.
+# 
+# A função mutate() por ter o tibble linha_total passada explicitamente como primeiro 
+# e já possui as colunas Instance e as 12 siglas de operadores, o mutate() sobrescreve 
+# os valores dessas colunas mantendo exatamente a mesma estrutura de 1 linha × 13 colunas.
+# O segundo parâmetro Instance = "Total (%)" substitui o texto "Total" da primeira 
+# coluna (Instance) pelo rótulo "Total (%)", identificando a linha de percentuais 
+# na Tabela 12.
+# O terceiro parâmetro across() aplica a mesma fórmula simultaneamente às 12 colunas
+# de operadores, evitando repetir o cálculo manualmente para cada sigla e preservando 
+# os nomes originais dos cabeçalhos.
+# A função all_of(todos_operadores) indica quais colunas serão transformadas, expandindo 
+# o vetor de texto todos_operadores ("EXT" até "END").
+# 
+# O til ~ declara uma função interna dentro do across() dispensando a escrita formal de function(x).
+# O .x é um marcador da coluna atual para representar o valor numérico de cada coluna 
+# de operador sendo processada naquele instante (EXT, depois SW, até END).
+# O 2 arredonda o percentual resultante para 2 casas decimais, reproduzindo a apresentação 
+# numérica da última linha da Tabela 12.
+# ==============================================================================
+linha_percentual <- mutate(linha_total,
+                           Instance = "Total (%)",
+                           across(all_of(todos_operadores), ~ round((.x / total_geral_todos_operadores) * 100, 2))
+                          )
 
+# ==============================================================================
+# A função bind_rows() empilha verticalmente múltiplos tibbles um abaixo do outro, 
+# consolidando tabela_12_instancias, linha_total e linha_percentual em um único tibble 
+# final de 17 linhas × 13 colunas armazenada em tabela_12_final.
+# ==============================================================================
 tabela_12_final <- bind_rows(
   tabela_12_instancias,
   linha_total,
