@@ -165,8 +165,11 @@ tabela_10 <- tabela_10 |>
 # Ajustando nomes das colunas
 tabela_10$instance_name <- sapply(tabela_10$instance_name, \(x) COLUNAS[[x]])
 #
+# Ordenando tabela 10
+tabela_10 <- tabela_10 |> arrange(as.numeric(rownames(tabela_10)))
+#
 # Mostrando tabela 10
-View(tabela_10 |> arrange(as.numeric(rownames(tabela_10))))
+View(tabela_10)
 #
 # Para descobrir 'free variables'...
 # codetools::findGlobals(util.montar_endereco_csv, merge = FALSE)$variables
