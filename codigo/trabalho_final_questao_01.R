@@ -127,11 +127,7 @@ lista_csv_experimentos = lista_csv |> filter(tipo_arquivo == TIPO_ARQUIVO_EXPERI
 lista_csv_redutor = lista_csv |> filter(tipo_arquivo == TIPO_ARQUIVO_REDUTOR)
 #
 # Buscando dados dos arquivos de execuções
-arquivos = lista_csv |> filter(
-  tipo_arquivo == TIPO_ARQUIVO_EXPERIMENTO
-  #, execucao == 26 # todo
-  # , instancia == 'Order' # todo
-)
+arquivos = lista_csv |> filter(tipo_arquivo == TIPO_ARQUIVO_EXPERIMENTO)
 dados = tibble()
 dados_evento_final = tibble()
 for (i in seq_len(nrow(arquivos))) {
@@ -147,7 +143,6 @@ for (i in seq_len(nrow(arquivos))) {
   evento_final <- bind_cols(tibble(Instance = arquivos$instancia[i]), evento_final)
   dados_evento_final <- bind_rows(dados_evento_final, evento_final)
 }
-View(eventos)
 #
 # Calculando melhor resultado, média e desvio padrão
 resultados_agrupados = dados_evento_final |> group_by(Instance) |> summarise(
@@ -244,9 +239,10 @@ View(p_values_encontrados)
 # #########
 #
 # Calculando melhorias, por instância e por operador
-melhorias_por_operador = dados |>
+melhorias_por_operador <- dados |>
   # Somente eventos de início e de melhoria
-  filter(`Event Name` == EVENTO_INICIO | `Event Name` == EVENTO_ENCONTREI_MELHOR) |>
+  filter(`Event Name` == EVENTO_INICIO |
+           `Event Name` == EVENTO_ENCONTREI_MELHOR) |>
   # Somente colunas relevantes
   select(Instance, `Event Name`, `Operator Name`, execucao, Fitness) |>
   # Copiando fitness dos eventos de início para outra coluna
@@ -254,7 +250,11 @@ melhorias_por_operador = dados |>
   # Preenchendo as células vazias com o valor do fitness de início
   fill(FitnessInicio, .direction = 'down') |>
   # Calculando a melhoria
-  mutate(melhoria = if_else(`Event Name` == EVENTO_ENCONTREI_MELHOR, Fitness - FitnessInicio, NA)) |>
+  mutate(melhoria = if_else(
+    `Event Name` == EVENTO_ENCONTREI_MELHOR,
+    Fitness - FitnessInicio,
+    NA
+  )) |>
   # Filtrando somente por eventos de melhoria
   filter(`Event Name` == EVENTO_ENCONTREI_MELHOR) |>
   # Deixando somente colunas relevantes
@@ -267,4 +267,90 @@ melhorias_por_operador = dados |>
   group_by(Instance, `Operator Name`) |>
   # Calculando melhoria média geral (a média das médias de cada execução)
   summarise(melhoria_media = mean(melhoria_media))
-View(melhorias_por_operador)
+#
+# Ajustando nomes das instâncias
+melhorias_por_operador$Instance <- sapply(melhorias_por_operador$Instance, \(x) COLUNAS[[x]])
+#
+# Arredondando valores de melhoria
+melhorias_por_operador$melhoria_media <- round(melhorias_por_operador$melhoria_media, 1)
+#
+# Criando Tabela 13 com base na Tabela 10
+tabela_13 <- tabela_10 |>
+  select(instance_name, best_result) |>
+  mutate(
+    Instance = instance_name,
+    Fitness = best_result,
+    instance_name = NULL,
+    best_result = NULL
+  )
+#
+# Adicionando valores por operador
+tabela_13 <- tabela_13 |>
+  left_join(
+    melhorias_por_operador |>
+      filter(`Operator Name` == 'Extraction') |>
+      select(melhoria_media) |>
+      mutate(EXT = melhoria_media, melhoria_media = NULL),
+    by = join_by(Instance == Instance),
+    keep = FALSE
+  ) |>
+  left_join(
+    melhorias_por_operador |>
+      filter(`Operator Name` == 'Swap') |>
+      select(melhoria_media) |>
+      mutate(SW = melhoria_media, melhoria_media = NULL),
+    by = join_by(Instance == Instance),
+    keep = FALSE
+  ) |>
+  left_join(
+    melhorias_por_operador |>
+      filter(`Operator Name` == 'Range') |>
+      select(melhoria_media) |>
+      mutate(RNG = melhoria_media, melhoria_media = NULL),
+    by = join_by(Instance == Instance),
+    keep = FALSE
+  ) |>
+  left_join(
+    melhorias_por_operador |>
+      filter(`Operator Name` == 'Dot') |>
+      select(melhoria_media) |>
+      mutate(DOT = melhoria_media, melhoria_media = NULL),
+    by = join_by(Instance == Instance),
+    keep = FALSE
+  ) |>
+  left_join(
+    melhorias_por_operador |>
+      filter(`Operator Name` == 'Star quantifier') |>
+      select(melhoria_media) |>
+      mutate(STAR = melhoria_media, melhoria_media = NULL),
+    by = join_by(Instance == Instance),
+    keep = FALSE
+  ) |>
+  left_join(
+    melhorias_por_operador |>
+      filter(`Operator Name` == 'Concatenation') |>
+      select(melhoria_media) |>
+      mutate(CC = melhoria_media, melhoria_media = NULL),
+    by = join_by(Instance == Instance),
+    keep = FALSE
+  ) |>
+  left_join(
+    melhorias_por_operador |>
+      filter(`Operator Name` == 'Negation') |>
+      select(melhoria_media) |>
+      mutate(NEG = melhoria_media, melhoria_media = NULL),
+    by = join_by(Instance == Instance),
+    keep = FALSE
+  ) |>
+  left_join(
+    melhorias_por_operador |>
+      filter(`Operator Name` == 'Back reference') |>
+      select(melhoria_media) |>
+      mutate(BR = melhoria_media, melhoria_media = NULL),
+    by = join_by(Instance == Instance),
+    keep = FALSE
+  ) |>
+  relocate(Fitness, .after = last_col())
+#
+# Visualizando tabela 13
+View(tabela_13)
