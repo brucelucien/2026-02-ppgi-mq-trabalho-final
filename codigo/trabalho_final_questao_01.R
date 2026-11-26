@@ -18,6 +18,7 @@
 # (50 valores de fitness) aos valores de fitness produzidos pelos outros
 # algoritmos (1 valor por algoritmo).
 #
+# Limpando ambiente
 rm(list = ls())
 #
 # Carregando bibliotecas
@@ -173,3 +174,51 @@ View(tabela_10)
 #
 # Para descobrir 'free variables'...
 # codetools::findGlobals(util.montar_endereco_csv, merge = FALSE)$variables
+#
+# #################
+# TESTE ESTATÍSTICO
+# #################
+#
+# We performed a Wilcox-Mann-Whitney test comparing the distributions of
+# fitness found by the local search to the fitness found by Norgiv’s algorithm
+# and the published fitness of the genetic programming approach. All results
+# were significantly different with α = 0.05, except for 'Plain Strings' (for
+# which all algorithms yielded the same fitness) and 'Order' (in the comparison
+# between the exact algorithm and the local search).
+#
+p_values_encontrados <- tibble(
+  instancia = character(),
+  norvig = double(),
+  norvig_significativo = logical(),
+  bartolli = double(),
+  bartolli_significativo = logical()
+)
+for (nome_instancia in instancias$instance) {
+  fitness_instancias = dados |>
+    filter(Instance == nome_instancia) |>
+    select(Fitness) |>
+    sapply(\(x) as.numeric(x))
+  fitness_outros = (instancias |> filter(instance == nome_instancia) |>
+                      select(norvig, bartolli))
+  fitness_norvig = as.numeric(fitness_outros$norvig)
+  fitness_bartolli = as.numeric(fitness_outros$bartolli)
+  p_value_norvig = wilcox.test(fitness_instancias, mu = fitness_norvig)$p.value
+  p_value_bartolli = wilcox.test(fitness_instancias, mu = fitness_bartolli)$p.value
+  p_values_encontrados <- add_row(
+    p_values_encontrados,
+    instancia = nome_instancia,
+    norvig = p_value_norvig,
+    norvig_significativo = p_value_norvig < 0.05,
+    bartolli = p_value_bartolli,
+    bartolli_significativo = p_value_bartolli < 0.05
+  )
+}
+#
+# Ajustando nomes das colunas
+p_values_encontrados$instancia <- sapply(p_values_encontrados$instancia, \(x) COLUNAS[[x]])
+#
+# Ordenando
+p_values_encontrados <- p_values_encontrados |> arrange(as.numeric(rownames(p_values_encontrados)))
+#
+# Mostrando p-values
+View(p_values_encontrados)
