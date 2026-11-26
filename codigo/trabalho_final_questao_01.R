@@ -27,6 +27,11 @@ if (!requireNamespace('tidyverse')) {
 }
 library('tidyverse')
 #
+if (!requireNamespace('data.tree')) {
+  install.packages('data.tree')
+}
+library('data.tree')
+#
 # Constantes
 NOME_ARQUIVO_INSTANCIAS <- 'instances.csv'
 ENDERECO_ARQUIVO_INSTANCIAS <-  paste('./dados/Regex Golf - Instancias/',
@@ -37,6 +42,8 @@ EXTENSAO_CSV = '.csv'
 TIPO_ARQUIVO_REDUTOR = 'REDUTOR'
 TIPO_ARQUIVO_EXPERIMENTO = 'EXPERIMENTO'
 NOME_EVENTO_FINAL = "Finished. The best found is here"
+EVENTO_ENCONTREI_MELHOR = "Found better in current neighborhood"
+EVENTO_INICIO = "Start of neighborhood"
 COLUNAS = list(
   warmup = "Plain strings",
   anchors = "Anchors",
@@ -120,21 +127,30 @@ lista_csv_experimentos = lista_csv |> filter(tipo_arquivo == TIPO_ARQUIVO_EXPERI
 lista_csv_redutor = lista_csv |> filter(tipo_arquivo == TIPO_ARQUIVO_REDUTOR)
 #
 # Buscando dados dos arquivos de execuções
-arquivos = lista_csv |> filter(tipo_arquivo == TIPO_ARQUIVO_EXPERIMENTO)
+arquivos = lista_csv |> filter(
+  tipo_arquivo == TIPO_ARQUIVO_EXPERIMENTO
+  #, execucao == 26 # todo
+  # , instancia == 'Order' # todo
+)
 dados = tibble()
+dados_evento_final = tibble()
 for (i in seq_len(nrow(arquivos))) {
   arquivo = read_delim(
     arquivos$endereco_arquivo_csv[i],
     col_names = TRUE,
     show_col_types = FALSE
   )
+  arquivo <- arquivo |> add_column(execucao = arquivos$execucao[i])
+  eventos <- bind_cols(tibble(Instance = arquivos$instancia[i]), arquivo)
+  dados <- bind_rows(dados, eventos)
   evento_final <- arquivo |> filter(`Event Name` == NOME_EVENTO_FINAL)
   evento_final <- bind_cols(tibble(Instance = arquivos$instancia[i]), evento_final)
-  dados = bind_rows(dados, evento_final)
+  dados_evento_final <- bind_rows(dados_evento_final, evento_final)
 }
+View(eventos)
 #
 # Calculando melhor resultado, média e desvio padrão
-resultados_agrupados = dados |> group_by(Instance) |> summarise(
+resultados_agrupados = dados_evento_final |> group_by(Instance) |> summarise(
   best_result = max(Fitness),
   media = round(mean(Fitness), digits = 1),
   desv_padrao = round(sd(Fitness), digits = 1)
@@ -194,7 +210,7 @@ p_values_encontrados <- tibble(
   bartolli_significativo = logical()
 )
 for (nome_instancia in instancias$instance) {
-  fitness_instancias = dados |>
+  fitness_instancias = dados_evento_final |>
     filter(Instance == nome_instancia) |>
     select(Fitness) |>
     sapply(\(x) as.numeric(x))
@@ -222,3 +238,33 @@ p_values_encontrados <- p_values_encontrados |> arrange(as.numeric(rownames(p_va
 #
 # Mostrando p-values
 View(p_values_encontrados)
+#
+# #########
+# QUESTÃO 5
+# #########
+#
+# Calculando melhorias, por instância e por operador
+melhorias_por_operador = dados |>
+  # Somente eventos de início e de melhoria
+  filter(`Event Name` == EVENTO_INICIO | `Event Name` == EVENTO_ENCONTREI_MELHOR) |>
+  # Somente colunas relevantes
+  select(Instance, `Event Name`, `Operator Name`, execucao, Fitness) |>
+  # Copiando fitness dos eventos de início para outra coluna
+  mutate(FitnessInicio = if_else(`Event Name` == EVENTO_INICIO, Fitness, NA)) |>
+  # Preenchendo as células vazias com o valor do fitness de início
+  fill(FitnessInicio, .direction = 'down') |>
+  # Calculando a melhoria
+  mutate(melhoria = if_else(`Event Name` == EVENTO_ENCONTREI_MELHOR, Fitness - FitnessInicio, NA)) |>
+  # Filtrando somente por eventos de melhoria
+  filter(`Event Name` == EVENTO_ENCONTREI_MELHOR) |>
+  # Deixando somente colunas relevantes
+  select(Instance, `Operator Name`, execucao, melhoria) |>
+  # Agrupando por execução
+  group_by(Instance, `Operator Name`, execucao) |>
+  # Calculando melhoria média de cada execução
+  summarise(melhoria_media = mean(melhoria)) |>
+  # Agrupando sem considerar execução
+  group_by(Instance, `Operator Name`) |>
+  # Calculando melhoria média geral (a média das médias de cada execução)
+  summarise(melhoria_media = mean(melhoria_media))
+View(melhorias_por_operador)
